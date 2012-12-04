@@ -1,15 +1,10 @@
-#include <stdio.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netinet/ip.h>
-#include <netinet/ip_icmp.h>
 #include <arpa/inet.h>
-#include <string.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <sys/times.h>
-#include <time.h>
 #include <netdb.h>
+#include <netinet/ip_icmp.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/time.h>
+#include <unistd.h>
 
 /*-------------------------------------------------------------------------*/
 
@@ -101,16 +96,16 @@ int main(int narg, char** argv)
 	struct icmphdr* icmphdr;
 	struct icmphdr icmp_pkt;
 	struct timeval tv, tv1, tv2;
+	int exit_code = 1;
 	fd_set rfds;
 	int iphdr_len;
 	int sockfd;
 	int res;
 	int seq;
 
-	if(narg != 2)
-	{
+	if(narg != 2) {
 		printf("Usage: %s HOST\n", argv[0]);
-		return(1);
+		return(exit_code);
 	}
 
 	/* configure target address */
@@ -118,25 +113,22 @@ int main(int narg, char** argv)
 	sendaddr.sin_family = AF_INET;
 
 	/* target address validation */
-	if(!inet_aton(argv[1], &sendaddr.sin_addr))
-	{
+	if(!inet_aton(argv[1], &sendaddr.sin_addr)) {
 		struct hostent* host = gethostbyname(argv[1]);
 
-		if(!host)
-		{
+		if(!host) {
 			printf("%s: unknown host %s\n", argv[0], argv[1]);
 
-			return(1);
+			return(exit_code);
 		}
 
 		sendaddr.sin_addr = *((struct in_addr*)host->h_addr);
 	}
 
 	/* create raw socket for ICMP */
-	if((sockfd = socket(AF_INET, SOCK_RAW | SOCK_NONBLOCK, IPPROTO_ICMP)) == -1)
-	{
+	if((sockfd = socket(AF_INET, SOCK_RAW | SOCK_NONBLOCK, IPPROTO_ICMP)) == -1) {
 		perror("socket()");
-		return(1);
+		return(exit_code);
 	}
 
 	/* prepare for bind */
@@ -144,14 +136,12 @@ int main(int narg, char** argv)
 	bindaddr.sa_family = AF_INET;
 
 	/* bind all on interfaces */
-	if(bind(sockfd, &bindaddr, sizeof(bindaddr)) == -1)
-	{
+	if(bind(sockfd, &bindaddr, sizeof(bindaddr)) == -1) {
 		perror("bind()");
 		goto error;
 	}
 	
-	for(seq = 0; seq < __PING_COUNT; ++ seq)
-	{
+	for(seq = 0; seq < __PING_COUNT; ++ seq) {
 		if(seq)
 			/* wait between ping */
 			sleep(__PING_WAIT);
@@ -159,14 +149,12 @@ int main(int narg, char** argv)
 		/* init icmp packet */
 		pingv4_pkt_init(&icmp_pkt, sizeof(icmp_pkt), getpid(), seq);
 
-		if(gettimeofday(&tv1, NULL))
-		{
+		if(gettimeofday(&tv1, NULL)) {
 			perror("gettimeofday()");
 			goto error;
 		}
 
-		if(sendto(sockfd, &icmp_pkt, sizeof(icmp_pkt), 0, (struct sockaddr *)&sendaddr, sizeof(sendaddr)) == -1)
-		{
+		if(sendto(sockfd, &icmp_pkt, sizeof(icmp_pkt), 0, (struct sockaddr *)&sendaddr, sizeof(sendaddr)) == -1) {
 			perror("sendto()");
 			goto error;
 		}
@@ -176,17 +164,15 @@ try_select:
 		FD_ZERO(&rfds);
 		FD_SET(sockfd, &rfds);
 		tv.tv_sec = __PING_TIMEOUT;
-        tv.tv_usec = 0;
+		tv.tv_usec = 0;
 
-		if((res = select(sockfd + 1, &rfds, NULL, NULL, &tv)) == -1)
-		{
+		if((res = select(sockfd + 1, &rfds, NULL, NULL, &tv)) == -1) {
 			perror("select()");
 			goto error;
 		}
 
 		/* timeout */
-		if(!res)
-		{
+		if(!res) {
 			printf("%s: icmp_req=%d timeout after %d seconds\n", argv[1], seq, __PING_TIMEOUT);
 			continue;
 		}
@@ -194,14 +180,12 @@ try_select:
 		recvaddr_len = sizeof(recvaddr);
 
 		/* receive packet */
-		if((res = recvfrom(sockfd, buf, sizeof(buf), 0, (struct sockaddr *)&recvaddr, &recvaddr_len)) == -1)
-		{
+		if((res = recvfrom(sockfd, buf, sizeof(buf), 0, (struct sockaddr *)&recvaddr, &recvaddr_len)) == -1) {
 			perror("select()");
 			goto error;
 		}
 
-		if(gettimeofday(&tv2, NULL))
-		{
+		if(gettimeofday(&tv2, NULL)) {
 			perror("gettimeofday()");
 			goto error;
 		}
@@ -221,17 +205,15 @@ try_select:
 			inet_ntoa(recvaddr.sin_addr),
 			ntohs(icmphdr->un.echo.sequence),
 			iphdr->ttl,
-			(tv2.tv_sec * 1000 + tv2.tv_usec / 1000) -
-			(tv1.tv_sec * 1000 + tv1.tv_usec / 1000)
+			(tv2.tv_sec - tv1.tv_sec) * 1000 +
+			(tv2.tv_usec - tv1.tv_usec) / 1000
 		);
 	}
 
-	close(sockfd);
-
-	return(0);
+	exit_code = 0;
 
 error:
 	close(sockfd);
 
-	return(1);
+	return(exit_code);
 }
