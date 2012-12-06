@@ -11,6 +11,11 @@
 #define __PING_COUNT	4
 #define __PING_TIMEOUT	2
 #define __PING_WAIT		1
+#define __PING_DATA		56
+
+/*-------------------------------------------------------------------------*/
+
+static int exit_code = 1;
 
 /*-------------------------------------------------------------------------*/
 
@@ -68,7 +73,7 @@ int pingv4_pkt_init(struct icmphdr* icmphdr, size_t len, uint16_t id, uint16_t s
 int pingv4_pkt_check(struct icmphdr* icmphdr, size_t len, uint16_t id, uint16_t seq)
 {
 	uint16_t checksum;
-	
+
 	if(sizeof(*icmphdr) > len)
 		return(0);
 
@@ -87,18 +92,15 @@ int pingv4_pkt_check(struct icmphdr* icmphdr, size_t len, uint16_t id, uint16_t 
 
 int main(int narg, char** argv)
 {
-	uint8_t buf[sizeof(struct icmphdr) + sizeof(struct iphdr)];
+	uint8_t buf[sizeof(struct iphdr) + sizeof(struct icmphdr) + __PING_DATA];
 	struct iphdr* iphdr = (struct iphdr*)buf;
 	struct sockaddr_in sendaddr;
 	struct sockaddr_in recvaddr;
-	struct sockaddr bindaddr;
+	struct timeval tv, tv1, tv2;
 	socklen_t recvaddr_len;
 	struct icmphdr* icmphdr;
-	struct icmphdr icmp_pkt;
-	struct timeval tv, tv1, tv2;
-	int exit_code = 1;
-	fd_set rfds;
 	int iphdr_len;
+	fd_set rfds;
 	int sockfd;
 	int res;
 	int seq;
@@ -131,30 +133,22 @@ int main(int narg, char** argv)
 		return(exit_code);
 	}
 
-	/* prepare for bind */
-	memset(&bindaddr, 0, sizeof(bindaddr));
-	bindaddr.sa_family = AF_INET;
-
-	/* bind all on interfaces */
-	if(bind(sockfd, &bindaddr, sizeof(bindaddr)) == -1) {
-		perror("bind()");
-		goto error;
-	}
-	
 	for(seq = 0; seq < __PING_COUNT; ++ seq) {
 		if(seq)
 			/* wait between ping */
 			sleep(__PING_WAIT);
 
+		icmphdr = (struct icmphdr*)buf;
+
 		/* init icmp packet */
-		pingv4_pkt_init(&icmp_pkt, sizeof(icmp_pkt), getpid(), seq);
+		pingv4_pkt_init(icmphdr, sizeof(*icmphdr) + __PING_DATA, getpid(), seq);
 
 		if(gettimeofday(&tv1, NULL)) {
 			perror("gettimeofday()");
 			goto error;
 		}
 
-		if(sendto(sockfd, &icmp_pkt, sizeof(icmp_pkt), 0, (struct sockaddr *)&sendaddr, sizeof(sendaddr)) == -1) {
+		if(sendto(sockfd, icmphdr, sizeof(*icmphdr) + __PING_DATA, 0, (struct sockaddr *)&sendaddr, sizeof(sendaddr)) == -1) {
 			perror("sendto()");
 			goto error;
 		}
