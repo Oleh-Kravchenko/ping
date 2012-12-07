@@ -5,6 +5,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <errno.h>
 
 /*-------------------------------------------------------------------------*/
 
@@ -96,11 +97,10 @@ int main(int narg, char** argv)
 	struct iphdr* iphdr = (struct iphdr*)buf;
 	struct sockaddr_in sendaddr;
 	struct sockaddr_in recvaddr;
-	struct timeval tv, tv1, tv2;
+	struct timeval tv1, tv2;
 	socklen_t recvaddr_len;
 	struct icmphdr* icmphdr;
 	int iphdr_len;
-	fd_set rfds;
 	int sockfd;
 	int res;
 	int seq;
@@ -128,8 +128,18 @@ int main(int narg, char** argv)
 	}
 
 	/* create raw socket for ICMP */
-	if((sockfd = socket(AF_INET, SOCK_RAW | SOCK_NONBLOCK, IPPROTO_ICMP)) == -1) {
+	if((sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP)) == -1) {
 		perror("socket()");
+		return(exit_code);
+	}
+
+	if(setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &(struct timeval){__PING_TIMEOUT, 0}, sizeof(struct timeval)) == -1) {
+		perror("setsockopt(SO_RCVTIMEO)");
+		return(exit_code);
+	}
+
+	if(setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &(struct timeval){0, 0}, sizeof(struct timeval)) == -1) {
+		perror("setsockopt(SO_SNDTIMEO)");
 		return(exit_code);
 	}
 
@@ -153,29 +163,17 @@ int main(int narg, char** argv)
 			goto error;
 		}
 
-try_select:
-		/* prepare for select() */
-		FD_ZERO(&rfds);
-		FD_SET(sockfd, &rfds);
-		tv.tv_sec = __PING_TIMEOUT;
-		tv.tv_usec = 0;
-
-		if((res = select(sockfd + 1, &rfds, NULL, NULL, &tv)) == -1) {
-			perror("select()");
-			goto error;
-		}
-
-		/* timeout */
-		if(!res) {
-			printf("%s: icmp_req=%d timeout after %d seconds\n", argv[1], seq, __PING_TIMEOUT);
-			continue;
-		}
-
+try_recvfrom:
 		recvaddr_len = sizeof(recvaddr);
 
 		/* receive packet */
 		if((res = recvfrom(sockfd, buf, sizeof(buf), 0, (struct sockaddr *)&recvaddr, &recvaddr_len)) == -1) {
-			perror("select()");
+			if(errno == EAGAIN) {
+				printf("%s: icmp_req=%d timeout after %d seconds\n", argv[1], seq, __PING_TIMEOUT);
+				continue;
+			}
+
+			perror("recvfrom()");
 			goto error;
 		}
 
@@ -190,7 +188,7 @@ try_select:
 
 		/* check packet owner */
 		if(!pingv4_pkt_check(icmphdr, res - iphdr_len, getpid(), seq))
-			goto try_select;
+			goto try_recvfrom;
 
 		/* print packet info */
 		printf("%d bytes from %s (%s): icmp_req=%d ttl=%d time=%zd ms\n",
