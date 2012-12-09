@@ -38,35 +38,31 @@ static int exit_code = 1;
 
 /*-------------------------------------------------------------------------*/
 
-uint16_t in_cksum(const uint16_t *addr, size_t len)
+/* implementation of RFC1071 Computing the Internet Checksum */
+uint16_t inet_checksum(const void* data, size_t count)
 {
-	int nleft = len;
-	const uint16_t *w = addr;
-	uint16_t answer;
-	uint32_t sum = 0;
+	const uint16_t* addr = data;
 
-	/*
-	 *  Our algorithm is simple, using a 32 bit accumulator (sum),
-	 *  we add sequential 16 bit words to it, and at the end, fold
-	 *  back all the carry bits from the top 16 bits into the lower
-	 *  16 bits.
+	/* compute Internet Checksum for "count" bytes
+	 * beginning at location "addr".
 	 */
-	while (nleft > 1)  {
-		sum += *w++;
-		nleft -= 2;
+	register long sum = 0;
+
+	while(count > 1) {
+		/* this is the inner loop */
+		sum += *(const uint16_t*)addr ++;
+		count -= 2;
 	}
 
-	/* mop up an odd byte, if necessary */
-	if (nleft == 1)
-		sum += htons(*(u_char *)w << 8);
+	/* add left-over byte, if any */
+	if(count > 0)
+		sum += *(const uint8_t*)addr;
 
-	/*
-	 * add back carry outs from top 16 bits to low 16 bits
-	 */
-	sum = (sum >> 16) + (sum & 0xffff);	/* add hi 16 to low 16 */
-	sum += (sum >> 16);			/* add carry */
-	answer = ~sum;				/* truncate to 16 bits */
-	return (answer);
+	/* fold 32-bit sum to 16 bits */
+	while(sum >> 16)
+		sum = (sum & 0xffff) + (sum >> 16);
+
+	return(~sum);
 }
 
 /*-------------------------------------------------------------------------*/
@@ -82,7 +78,7 @@ int pingv4_pkt_init(struct icmphdr* icmphdr, size_t len, uint16_t id, uint16_t s
 	icmphdr->code = ICMP_REDIR_NET;
 	icmphdr->un.echo.id = htons(id);
 	icmphdr->un.echo.sequence = htons(seq);
-	icmphdr->checksum = in_cksum((uint16_t*)icmphdr, len);
+	icmphdr->checksum = inet_checksum(icmphdr, len);
 
 	return(0);
 }
@@ -103,7 +99,7 @@ int pingv4_pkt_check(struct icmphdr* icmphdr, size_t len, uint16_t id, uint16_t 
 	return((icmphdr->type == ICMP_ECHOREPLY) &&
 		(icmphdr->un.echo.id == htons(id)) &&
 		(icmphdr->un.echo.sequence == htons(seq)) &&
-		(checksum == (icmphdr->checksum = in_cksum((uint16_t*)icmphdr, len)))
+		(checksum == (icmphdr->checksum = inet_checksum(icmphdr, len)))
 	);
 }
 
