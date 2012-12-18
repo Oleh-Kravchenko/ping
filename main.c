@@ -206,7 +206,7 @@ try_recvfrom:
 
 		/* print packet info */
 		printf("%d bytes from %s (%s): icmp_req=%d ttl=%d time=%zd ms\n",
-			htons(iphdr->tot_len) - iphdr_len,
+			ntohs(iphdr->tot_len) - iphdr_len,
 			argv[1],
 			inet_ntoa(recvaddr.sin_addr),
 			ntohs(icmphdr->un.echo.sequence),
