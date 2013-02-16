@@ -50,7 +50,7 @@ uint16_t inet_checksum(const void* data, size_t count)
 
 	while(count > 1) {
 		/* this is the inner loop */
-		sum += *(const uint16_t*)addr ++;
+		sum += *addr ++;
 		count -= 2;
 	}
 
@@ -67,9 +67,11 @@ uint16_t inet_checksum(const void* data, size_t count)
 
 /*-------------------------------------------------------------------------*/
 
-int pingv4_pkt_init(struct icmphdr* icmphdr, size_t len, uint16_t id, uint16_t seq)
+int pingv4_pkt_init(void* buf, size_t len, uint16_t id, uint16_t seq)
 {
-	if(sizeof(*icmphdr) > len)
+	struct icmphdr* icmphdr = buf;
+
+	if(len < sizeof(struct icmphdr))
 		return(-1);
 
 	/* setup ICMP packet */
@@ -78,18 +80,19 @@ int pingv4_pkt_init(struct icmphdr* icmphdr, size_t len, uint16_t id, uint16_t s
 	icmphdr->code = ICMP_REDIR_NET;
 	icmphdr->un.echo.id = htons(id);
 	icmphdr->un.echo.sequence = htons(seq);
-	icmphdr->checksum = inet_checksum(icmphdr, len);
+	icmphdr->checksum = inet_checksum(buf, len);
 
 	return(0);
 }
 
 /*-------------------------------------------------------------------------*/
 
-int pingv4_pkt_check(struct icmphdr* icmphdr, size_t len, uint16_t id, uint16_t seq)
+int pingv4_pkt_check(void* buf, size_t len, uint16_t id, uint16_t seq)
 {
+	struct icmphdr* icmphdr = buf;
 	uint16_t checksum;
 
-	if(sizeof(*icmphdr) > len)
+	if(len < sizeof(struct icmphdr))
 		return(0);
 
 	/* check checksum without checksum */
@@ -99,7 +102,7 @@ int pingv4_pkt_check(struct icmphdr* icmphdr, size_t len, uint16_t id, uint16_t 
 	return((icmphdr->type == ICMP_ECHOREPLY) &&
 		(icmphdr->un.echo.id == htons(id)) &&
 		(icmphdr->un.echo.sequence == htons(seq)) &&
-		(checksum == (icmphdr->checksum = inet_checksum(icmphdr, len)))
+		(checksum == (icmphdr->checksum = inet_checksum(buf, len)))
 	);
 }
 
