@@ -112,15 +112,12 @@ int main(int narg, char** argv)
 {
 	uint8_t buf[sizeof(struct iphdr) + sizeof(struct icmphdr) + __PING_DATA];
 	struct iphdr* iphdr = (struct iphdr*)buf;
-	struct sockaddr_in sendaddr;
-	struct sockaddr_in recvaddr;
+	struct sockaddr_in sendaddr, recvaddr;
+	int iphdr_len, sockfd, res, seq;
 	struct timeval tv1, tv2;
 	socklen_t recvaddr_len;
 	struct icmphdr* icmphdr;
-	int iphdr_len;
-	int sockfd;
-	int res;
-	int seq;
+	time_t delay;
 
 	if(narg != 2) {
 		printf("Usage: %s HOST\n", argv[0]);
@@ -162,20 +159,20 @@ int main(int narg, char** argv)
 
 	for(seq = 0; seq < __PING_COUNT; ++ seq) {
 		if(seq)
-			/* wait between ping */
+			/* wait between send ping */
 			sleep(__PING_WAIT);
 
 		icmphdr = (struct icmphdr*)buf;
 
 		/* init icmp packet */
-		pingv4_pkt_init(icmphdr, sizeof(*icmphdr) + __PING_DATA, getpid(), seq);
+		pingv4_pkt_init(icmphdr, sizeof(buf) - sizeof(struct iphdr), getpid(), seq);
 
 		if(gettimeofday(&tv1, NULL)) {
 			perror("gettimeofday()");
 			goto error;
 		}
 
-		if(sendto(sockfd, icmphdr, sizeof(*icmphdr) + __PING_DATA, 0, (struct sockaddr *)&sendaddr, sizeof(sendaddr)) == -1) {
+		if(sendto(sockfd, icmphdr, sizeof(buf) - sizeof(struct iphdr), 0, (struct sockaddr*)&sendaddr, sizeof(sendaddr)) == -1) {
 			perror("sendto()");
 			goto error;
 		}
@@ -184,7 +181,7 @@ try_recvfrom:
 		recvaddr_len = sizeof(recvaddr);
 
 		/* receive packet */
-		if((res = recvfrom(sockfd, buf, sizeof(buf), 0, (struct sockaddr *)&recvaddr, &recvaddr_len)) == -1) {
+		if((res = recvfrom(sockfd, buf, sizeof(buf), 0, (struct sockaddr*)&recvaddr, &recvaddr_len)) == -1) {
 			if(errno == EAGAIN) {
 				printf("%s: icmp_req=%d timeout after %d seconds\n", argv[1], seq, __PING_TIMEOUT);
 				continue;
@@ -207,15 +204,16 @@ try_recvfrom:
 		if(!pingv4_pkt_check(icmphdr, res - iphdr_len, getpid(), seq))
 			goto try_recvfrom;
 
+		/* calculate delay between send and receive */
+		delay = (tv2.tv_sec - tv1.tv_sec) * 1000000 + (tv2.tv_usec - tv1.tv_usec);
+
 		/* print packet info */
-		printf("%d bytes from %s (%s): icmp_req=%d ttl=%d time=%zd ms\n",
+		printf("%d bytes from %s (%s): icmp_req=%d ttl=%d time=%zd.%03zd ms\n",
 			ntohs(iphdr->tot_len) - iphdr_len,
 			argv[1],
 			inet_ntoa(recvaddr.sin_addr),
 			ntohs(icmphdr->un.echo.sequence),
-			iphdr->ttl,
-			(tv2.tv_sec - tv1.tv_sec) * 1000 +
-			(tv2.tv_usec - tv1.tv_usec) / 1000
+			iphdr->ttl, delay / 1000, delay % 1000
 		);
 	}
 
