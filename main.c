@@ -157,6 +157,12 @@ int main(int narg, char** argv)
 		return(exit_code);
 	}
 
+	/* show ping configuration */
+	printf("PING %s (%s) %d(%zd) bytes of data.\n",
+		argv[1], inet_ntoa(sendaddr.sin_addr),
+		__PING_DATA, sizeof(buf)
+	);
+
 	for(seq = 0; seq < __PING_COUNT; ++ seq) {
 		if(seq)
 			/* wait between send ping */
